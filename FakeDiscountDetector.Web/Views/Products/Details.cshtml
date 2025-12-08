@@ -1,0 +1,218 @@
+@model FakeDiscountDetector.Web.ViewModels.ProductDetailsViewModel
+
+@{
+    ViewData["Title"] = "Product Details";
+}
+
+<div class="container animate-fade-in-up">
+    <div class="row g-5">
+        
+        <div class="col-lg-5">
+            <div class="bg-white p-4 rounded-custom shadow-sm sticky-top" style="top: 100px; z-index: 1;">
+                <img src="@Model.Product.ImageUrl" alt="@Model.Product.Name" class="img-fluid w-100" style="object-fit: contain; max-height: 500px;">
+            </div>
+        </div>
+
+      
+        <div class="col-lg-7">
+            <nav aria-label="breadcrumb" class="mb-3">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a asp-controller="Home" asp-action="Index">Home</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">@Model.Product.Name</li>
+                </ol>
+            </nav>
+
+            <h1 class="fw-bold mb-3">@Model.Product.Name</h1>
+            
+            <div class="d-flex align-items-center gap-3 mb-4">
+                <span class="badge bg-light text-dark border">@Model.Product.StoreName</span>
+                @if (Model.Product.Source == "Foleja")
+                {
+                    <span class="badge bg-warning text-dark">Foleja</span>
+                }
+                else if (Model.Product.Source == "Gjirafa50")
+                {
+                    <span class="badge bg-info text-dark">Gjirafa50</span>
+                }
+            </div>
+
+            @{
+                var latestPrice = Model.Product.PriceHistory.OrderByDescending(p => p.Timestamp).FirstOrDefault();
+            }
+
+            @if (latestPrice != null)
+            {
+                <div class="card border-0 bg-surface shadow-sm mb-4">
+                    <div class="card-body">
+                        <div class="d-flex align-items-end gap-3 mb-3">
+                            <span class="display-4 fw-bold text-primary-custom">@latestPrice.Price €</span>
+                            @if (latestPrice.OriginalPrice.HasValue && latestPrice.OriginalPrice > latestPrice.Price)
+                            {
+                                <div class="mb-2">
+                                    <span class="text-muted text-decoration-line-through fs-5">@latestPrice.OriginalPrice €</span>
+                                    <span class="badge bg-danger ms-2">
+                                        -@((int)((latestPrice.OriginalPrice - latestPrice.Price) / latestPrice.OriginalPrice * 100))%
+                                    </span>
+                                </div>
+                            }
+                        </div>
+
+                        <div class="d-grid gap-2 d-md-flex">
+                            <a href="@Model.Product.Url" target="_blank" class="btn btn-primary btn-lg px-5">
+                                Buy Now <i class="bi bi-box-arrow-up-right ms-2"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (Model.Prediction != null)
+            {
+                <div class="alert @(Model.Prediction.Advice == "Buy Now" ? "alert-success" : Model.Prediction.Advice == "Wait" ? "alert-warning" : "alert-info") mb-4 border-0 shadow-sm">
+                    <div class="d-flex gap-3">
+                        <div class="fs-2">
+                            @if(Model.Prediction.Advice == "Buy Now") { <span>🚀</span> }
+                            else if(Model.Prediction.Advice == "Wait") { <span>✋</span> }
+                            else { <span>ℹ️</span> }
+                        </div>
+                        <div>
+                            <h5 class="alert-heading fw-bold">AI Forecast: @Model.Prediction.Advice</h5>
+                            <p class="mb-0">
+                                Trend is <strong>@Model.Prediction.Trend</strong>. Predicted price: <strong>@Model.Prediction.PredictedPrice.ToString("F2") €</strong>.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (Model.Competitors.Any())
+            {
+                <div class="card mb-4 border-0 shadow-sm">
+                    <div class="card-header bg-white fw-bold py-3">
+                        Compare with other stores
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        @foreach (var comp in Model.Competitors)
+                        {
+                            <li class="list-group-item d-flex justify-content-between align-items-center py-3">
+                                <div>
+                                    <span class="fw-bold">@comp.StoreName</span>
+                                    <div class="text-muted small">@comp.Name</div>
+                                </div>
+                                <a asp-action="Details" asp-route-id="@comp.Id" class="btn btn-sm btn-outline-primary">Compare</a>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            <div class="mb-5">
+                <h4 class="fw-bold mb-3">Price History</h4>
+                <div class="bg-white p-3 rounded-custom shadow-sm" style="height: 300px;">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="mb-5">
+                 <h5 class="fw-bold mb-3">Detailed History</h5>
+                 <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Price</th>
+                                <th>Original Price</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var price in Model.Product.PriceHistory.OrderByDescending(p => p.Timestamp).Take(10))
+                            {
+                                <tr>
+                                    <td>@price.Timestamp.ToString("g")</td>
+                                    <td>@price.Price €</td>
+                                    <td>@(price.OriginalPrice?.ToString() ?? "-") €</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    @if (Model.Product.PriceHistory.Count > 10)
+                    {
+                        <div class="text-center text-muted small">Showing last 10 records</div>
+                    }
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    var ctx = document.getElementById('priceChart').getContext('2d');
+    
+    // Gradient for the chart
+    var gradient = ctx.createLinearGradient(0, 0, 0, 400);
+    gradient.addColorStop(0, 'rgba(79, 70, 229, 0.2)');
+    gradient.addColorStop(1, 'rgba(79, 70, 229, 0)');
+
+    var priceChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: @Html.Raw(Json.Serialize(Model.Product.PriceHistory.OrderBy(p => p.Timestamp).Select(p => p.Timestamp.ToString("MMM dd")))),
+            datasets: [{
+                label: 'Price',
+                data: @Html.Raw(Json.Serialize(Model.Product.PriceHistory.OrderBy(p => p.Timestamp).Select(p => p.Price))),
+                borderColor: '#4F46E5',
+                backgroundColor: gradient,
+                borderWidth: 2,
+                pointBackgroundColor: '#ffffff',
+                pointBorderColor: '#4F46E5',
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                fill: true,
+                tension: 0.4
+            },
+            {
+                label: 'Original Price',
+                data: @Html.Raw(Json.Serialize(Model.Product.PriceHistory.OrderBy(p => p.Timestamp).Select(p => p.OriginalPrice ?? 0))),
+                borderColor: '#EF4444',
+                borderWidth: 2,
+                borderDash: [5, 5],
+                pointRadius: 0,
+                fill: false,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: false,
+                    grid: {
+                        borderDash: [2, 2]
+                    }
+                },
+                x: {
+                    grid: {
+                        display: false
+                    }
+                }
+            },
+            interaction: {
+                mode: 'nearest',
+                axis: 'x',
+                intersect: false
+            }
+        }
+    });
+</script>

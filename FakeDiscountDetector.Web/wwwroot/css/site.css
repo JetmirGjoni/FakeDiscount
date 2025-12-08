@@ -1,0 +1,187 @@
+:root {
+    --primary-color: #4F46E5;
+    --primary-hover: #4338ca;
+    --secondary-color: #6B7280;
+    --success-color: #10B981;
+    --danger-color: #EF4444;
+    --background-color: #F3F4F6;
+    --surface-color: #FFFFFF;
+    --text-primary: #111827;
+    --text-secondary: #4B5563;
+    --border-radius: 12px;
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+html {
+    font-size: 16px;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--background-color);
+    color: var(--text-primary);
+    margin-bottom: 60px;
+}
+
+/* Navbar Overrides */
+.navbar {
+    background-color: #1F2937 !important;
+    box-shadow: var(--shadow-md);
+}
+
+.navbar-brand {
+    font-weight: 700;
+    letter-spacing: -0.025em;
+}
+
+/* Cards */
+.card {
+    border: none;
+    border-radius: var(--border-radius);
+    background-color: var(--surface-color);
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    overflow: hidden;
+}
+
+.card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+.card-img-top {
+    border-bottom: 1px solid #E5E7EB;
+    padding: 1rem;
+    background: #fff;
+}
+
+.card-title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.card-text {
+    color: var(--text-secondary);
+}
+
+/* Buttons */
+.btn {
+    border-radius: 8px;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-hover);
+    border-color: var(--primary-hover);
+}
+
+/* Utilities */
+.text-primary-custom {
+    color: var(--primary-color);
+}
+
+.bg-surface {
+    background-color: var(--surface-color);
+}
+
+.shadow-custom {
+    box-shadow: var(--shadow-md);
+}
+
+.rounded-custom {
+    border-radius: var(--border-radius);
+}
+
+/* Animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translate3d(0, 40px, 0);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0);
+    }
+}
+
+.animate-fade-in-up {
+    animation-name: fadeInUp;
+    animation-duration: 0.8s;
+    animation-fill-mode: both;
+}
+
+.delay-100 {
+    animation-delay: 100ms;
+}
+
+.delay-200 {
+    animation-delay: 200ms;
+}
+
+.delay-300 {
+    animation-delay: 300ms;
+}
+
+/* Biggest Discounts Grid */
+.discount-grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1.5rem;
+}
+
+@media (min-width: 768px) {
+    .discount-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 992px) {
+    .discount-grid {
+        grid-template-columns: 2fr 1fr 1fr;
+        grid-template-rows: auto auto;
+    }
+
+    /* First item spans 2 rows and 1 column (Large item on left) */
+    .discount-item-0 {
+        grid-column: 1 / 2;
+        grid-row: 1 / 3;
+    }
+}
+
+.discount-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-md);
+    transition: transform 0.3s ease;
+    background: white;
+    min-height: 280px;
+}
+
+.discount-card:hover {
+    transform: scale(1.02);
+    z-index: 5;
+}
+
+.discount-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: var(--danger-color);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-weight: bold;
+    box-shadow: var(--shadow-sm);
+    z-index: 10;
+}
