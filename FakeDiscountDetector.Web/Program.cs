@@ -11,7 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite("Data Source=fakediscount.db"));
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=fakediscount.db"));
 
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<IDiscountAnalyzer, DiscountAnalyzer>();
@@ -50,7 +50,8 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
-    DataSeeder.SeedAsync(db).Wait();
+    db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
+
 
     // trajnimi modelit 
     var trainingService = scope.ServiceProvider.GetRequiredService<ITrainingService>() as MLTrainingService;

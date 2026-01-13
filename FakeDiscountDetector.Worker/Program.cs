@@ -3,19 +3,32 @@ using FakeDiscountDetector.Infrastructure.Data;
 using FakeDiscountDetector.Infrastructure.Scraping;
 using FakeDiscountDetector.Infrastructure.Services;
 using FakeDiscountDetector.Infrastructure.AI;
+using FakeDiscountDetector.Infrastructure.Messaging;
 using FakeDiscountDetector.Worker;
 using Microsoft.EntityFrameworkCore;
 
 var host = Host.CreateDefaultBuilder(args)
     .ConfigureServices((hostContext, services) =>
     {
-        services.AddDbContext<AppDbContext>(options =>
-            options.UseSqlite("Data Source=../FakeDiscountDetector.Web/fakediscount.db")); // Shared DB with Web
+        var connectionString = hostContext.Configuration.GetConnectionString("DefaultConnection")
+                               ?? "Data Source=fakediscount.db";
 
-        services.AddScoped<IScraper, Gjirafa50Scraper>();
-        services.AddScoped<IScraper, FolejaScraper>();
-        // more scrapers.....
-        // services.AddHttpClient<IScraper, AmazonScraper>();
+        services.AddDbContext<AppDbContext>(options =>
+            options.UseSqlite(connectionString));
+
+
+        if (args.Contains("--use-rabbitmq"))
+        {
+            Console.WriteLine("Running with RabbitMQ");
+            services.AddSingleton<FakeDiscountDetector.Infrastructure.Messaging.RabbitMQService>();
+            services.AddSingleton<IMessageQueueService>(sp => sp.GetRequiredService<FakeDiscountDetector.Infrastructure.Messaging.RabbitMQService>());
+        }
+        else
+        {
+            Console.WriteLine("Running in LOCAL MODE (In-Memory Queue)");
+            services.AddSingleton<IMessageQueueService, InMemoryMessageQueueService>();
+        }
+
         services.AddScoped<IProductRepository, ProductRepository>();
         services.AddScoped<IDiscountAnalyzer, DiscountAnalyzer>();
         services.AddScoped<IProductMatcher, TokenBasedProductMatcher>();
@@ -28,7 +41,8 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddScoped<IProductClassifier, HybridClassifier>();
 
         services.AddHostedService<ScrapingWorker>();
-        services.AddHostedService<ProductMatchingWorker>();
+        services.AddHostedService<SchedulingWorker>();  // Publisher
+        // services.AddHostedService<ProductMatchingWorker>(); // Can keep or remove depending on verifying scraping only
     })
     .Build();
 

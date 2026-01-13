@@ -22,18 +22,53 @@ public class HomeController : Controller
         _classifier = classifier;
     }
 
-    public async Task<IActionResult> Index(string? searchString, int? pageNumber)
+    public async Task<IActionResult> Index(string? searchString, string? category, int? pageNumber)
     {
         int pageSize = 36;
         int pageIndex = pageNumber ?? 1;
 
-        var products = await _repository.GetProductsAsync(searchString, pageIndex, pageSize);
-        var totalCount = await _repository.GetTotalCountAsync(searchString);
+        // Defined category list per user requirement
+        var allCategories = new List<string> {
+            "Smartphone", "Audio", "Laptop", "Tablet", "Smartwatch", "Monitor", "TV",
+            "Computer Accessories", "Networking", "Gaming Console", "Gaming Accessories",
+            "Camera", "Smart Home", "Storage", "Other"
+        };
 
-        var paginatedList = new PaginatedList<Product>(products, totalCount, pageIndex, pageSize);
+        // Defined store list per user requirement (from scrapers.json)
+        var allStores = new List<string> {
+            "AmazonDE", "AztechOnline", "ButonKS", "eBaa", "Foleja", "Gjirafa50",
+            "GjirafaMall", "NeptunKS", "ShopAz", "TopShopKS"
+        };
+
+        // We sort them for display
+        allCategories.Sort();
+        allStores.Sort();
+
+        ViewBag.Categories = allCategories;
+        ViewBag.Stores = allStores;
+        ViewBag.CurrentCategory = category;
+
+       
+
+        var products = await _repository.GetProductsAsync(searchString, 1, 10000); 
+
+        if (!string.IsNullOrEmpty(category))
+        {
+            products = products.Where(p => p.Category == category).ToList();
+        }
+
+        var totalCount = products.Count;
+
+     
+        var pagedProducts = products
+            .Skip((pageIndex - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        var paginatedList = new PaginatedList<Product>(pagedProducts, totalCount, pageIndex, pageSize);
 
         var fakeDiscounts = new List<Product>();
-        foreach (var product in products)
+        foreach (var product in pagedProducts)
         {
             var latestPrice = product.PriceHistory.OrderByDescending(p => p.Timestamp).FirstOrDefault();
             if (latestPrice != null && _analyzer.IsFakeDiscount(product, latestPrice.Price, latestPrice.OriginalPrice))
@@ -43,7 +78,7 @@ public class HomeController : Controller
         }
 
        
-        foreach (var product in products)
+        foreach (var product in pagedProducts)
         {
             if (string.IsNullOrEmpty(product.Category) || product.Category == "Uncategorized")
             {
@@ -63,8 +98,8 @@ public class HomeController : Controller
         ViewBag.FakeDiscounts = fakeDiscounts;
         ViewData["CurrentFilter"] = searchString;
 
-      
-        var biggestDiscounts = products
+    
+        var biggestDiscounts = pagedProducts
             .Where(p => !fakeDiscounts.Contains(p))
             .Select(p => new
             {
@@ -76,9 +111,9 @@ public class HomeController : Controller
             {
                 x.Product,
                 x.LatestPrice,
-                DiscountAmount = x.LatestPrice.OriginalPrice - x.LatestPrice.Price
+                DiscountPercentage = (x.LatestPrice.OriginalPrice.Value - x.LatestPrice.Price) / x.LatestPrice.OriginalPrice.Value
             })
-            .OrderByDescending(x => x.DiscountAmount)
+            .OrderByDescending(x => x.DiscountPercentage)
             .Take(5)
             .Select(x => x.Product)
             .ToList();

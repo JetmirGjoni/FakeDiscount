@@ -13,7 +13,7 @@ namespace FakeDiscountDetector.Infrastructure.AI
     {
         private readonly string _apiKey;
         private readonly HttpClient _httpClient;
-        private const string GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent";
+        private const string GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
         public GeminiFallbackService(IConfiguration configuration, HttpClient httpClient)
         {
@@ -25,7 +25,7 @@ namespace FakeDiscountDetector.Infrastructure.AI
         {
             if (string.IsNullOrEmpty(_apiKey)) return "Unknown (No API Key)";
 
-            var prompt = $"Classify the following product into a single category. Return ONLY the category name from the following list:Smartphone,Tablet,Laptop,Other,Computer/Component,Smart Home/Camera,Smartwatch,Monitor,Furniture, Audio,TV,Gaming, nothing else.\n\n" +
+            var prompt = $"Classify the following product into a single category. Return ONLY the category name from the following list: Smartphone, Audio, Laptop, Tablet, Smartwatch, Monitor, TV, Computer Accessories, Networking, Gaming Console, Gaming Accessories, Camera, Smart Home, Storage, Other.\n\n" +
                          $"Product: {product.Name}\n" +
                          $"Store: {product.StoreName}\n" +
                          $"Price: {product.PriceHistory.FindLast(x => true)?.Price}";
@@ -87,7 +87,7 @@ namespace FakeDiscountDetector.Infrastructure.AI
         public async Task<(string Category, float Confidence)> PredictCategoryWithConfidenceAsync(Product product)
         {
             var category = await PredictCategoryAsync(product);
-            
+
             return (category, category != "Unknown" && !category.Contains("Error") ? 1.0f : 0.0f);
         }
     }

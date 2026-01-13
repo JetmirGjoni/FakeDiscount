@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using FakeDiscountDetector.Core.Configurations;
 using FakeDiscountDetector.Core.Interfaces;
 using FakeDiscountDetector.Infrastructure.Scraping;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,68 +10,133 @@ using Microsoft.Extensions.Logging;
 
 namespace FakeDiscountDetector.Worker
 {
-    public partial class ScrapingWorker(ILogger<ScrapingWorker> logger, IServiceProvider serviceProvider) : BackgroundService
+    using FakeDiscountDetector.Infrastructure.Messaging;
+
+    public partial class ScrapingWorker(ILogger<ScrapingWorker> logger, IServiceProvider serviceProvider, IMessageQueueService queueService) : BackgroundService
     {
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        protected override Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            while (!stoppingToken.IsCancellationRequested)
+            logger.LogInformation("ScrapingWorker: Waiting for tasks...");
+
+
+            var task = Task.Run(async () =>
             {
-                LogWorkerRunning(logger, DateTimeOffset.Now);
-
-                using (var scope = serviceProvider.CreateScope())
+                await queueService.ConsumeScrapingTasksAsync(async (config) =>
                 {
-                    var scrapers = scope.ServiceProvider.GetRequiredService<IEnumerable<IScraper>>();
-                    var repository = scope.ServiceProvider.GetRequiredService<IProductRepository>();
-                    var analyzer = scope.ServiceProvider.GetRequiredService<IDiscountAnalyzer>();
-                    var classifier = scope.ServiceProvider.GetRequiredService<IProductClassifier>();
+                    logger.LogInformation("Received task for {Store}", config.Name);
+                    await ProcessScrapingTask(config);
+                }, stoppingToken);
+            }, stoppingToken);
 
-                    foreach (var scraper in scrapers)
+            return Task.CompletedTask;
+        }
+
+        private async Task ProcessScrapingTask(ScraperConfig config)
+        {
+            using (var scope = serviceProvider.CreateScope())
+            {
+                var repository = scope.ServiceProvider.GetRequiredService<IProductRepository>();
+                var analyzer = scope.ServiceProvider.GetRequiredService<IDiscountAnalyzer>();
+                var classifier = scope.ServiceProvider.GetRequiredService<IProductClassifier>();
+
+                // Instantiate the scraper dynamically
+                var scraper = new GenericConfigurableScraper(config);
+
+                try
+                {
+                    // Crawling Logic: If CategorySelector is present and TargetUrl is null, we discover
+                    if (!string.IsNullOrEmpty(config.CategorySelector) && string.IsNullOrEmpty(config.TargetUrl))
                     {
-                        try
+                        logger.LogInformation("[{Store}] Discovery mode: Finding categories...", config.Name);
+                        var categories = await scraper.DiscoverCategoriesAsync();
+                        foreach (var categoryUrl in categories)
                         {
-                            LogStartingScraping(logger, scraper.GetType().Name);
-                            var products = await scraper.ScrapeAsync();
-                            LogScrapedProducts(logger, products.Count, scraper.GetType().Name);
-
-                            foreach (var product in products)
+                            var subTaskConfig = new ScraperConfig
                             {
-                                var existingProduct = await repository.GetProductByUrlAsync(product.Url);
-                                if (existingProduct == null)
-                                {
-                                    // Classify product
-                                    product.Category = await classifier.PredictCategoryAsync(product);
+                                Name = config.Name,
+                                BaseUrl = config.BaseUrl,
+                                TargetUrl = categoryUrl,
+                                CategorySelector = null, // Important: prevent infinite loop
+                                ItemSelector = config.ItemSelector,
+                                NameSelector = config.NameSelector,
+                                PriceSelector = config.PriceSelector,
+                                OldPriceSelector = config.OldPriceSelector,
+                                ImageSelector = config.ImageSelector,
+                                PaginationType = config.PaginationType,
+                                PaginationSelector = config.PaginationSelector,
+                                MaxPages = config.MaxPages,
+                                WaitSelector = config.WaitSelector,
+                                PriceMultiplier = config.PriceMultiplier,
+                                OldPriceMultiplier = config.OldPriceMultiplier,
+                                PriceCulture = config.PriceCulture
+                            };
+                            await queueService.PublishScrapingTaskAsync(subTaskConfig);
+                        }
+                        logger.LogInformation("[{Store}] Discovery complete. Published {Count} sub-tasks.", config.Name, categories.Count);
+                        return;
+                    }
 
-                                    await repository.AddProductAsync(product);
-                                    LogAddedNewProduct(logger, product.Name, product.Category);
+                    LogStartingScraping(logger, config.Name);
+                    var products = await scraper.ScrapeAsync();
+                    LogScrapedProducts(logger, products.Count, config.Name);
+
+                    for (int i = 0; i < products.Count; i++)
+                    {
+                        var product = products[i];
+                        logger.LogInformation("Processing product {Index}/{Total}: {Name}", i + 1, products.Count, product.Name);
+
+                        var existingProduct = await repository.GetProductByUrlAsync(product.Url);
+                        if (existingProduct == null)
+                        {
+                            logger.LogInformation("Product not found in DB. Predicting category...");
+                            product.Category = await classifier.PredictCategoryAsync(product);
+
+                            logger.LogInformation("Adding new product to DB...");
+                            await repository.AddProductAsync(product);
+                            LogAddedNewProduct(logger, product.Name, product.Category);
+                        }
+                        else
+                        {
+                            logger.LogInformation("Product exists (ID: {Id}). Processing price history...", existingProduct.Id);
+
+                            // Check for reclassification need
+                            if (string.IsNullOrEmpty(existingProduct.Category) || existingProduct.Category == "Other" || existingProduct.Category == "Uncategorized")
+                            {
+                                logger.LogInformation("Product category is '{Category}'. Re-classifying...", existingProduct.Category ?? "null");
+                                existingProduct.Category = await classifier.PredictCategoryAsync(product);
+                                await repository.UpdateProductAsync(existingProduct);
+                                logger.LogInformation("Product updated with new category: {Category}", existingProduct.Category);
+                            }
+
+                            var latestPrice = product.PriceHistory.FirstOrDefault();
+                            if (latestPrice != null)
+                            {
+                                latestPrice.ProductId = existingProduct.Id;
+
+                                logger.LogInformation("Adding price record to DB...");
+                                await repository.AddPriceRecordAsync(latestPrice);
+                                logger.LogInformation("Price record added.");
+
+                                var isFake = analyzer.IsFakeDiscount(existingProduct, latestPrice.Price, latestPrice.OriginalPrice);
+                                if (isFake)
+                                {
+                                    LogPotentialFakeDiscount(logger, product.Name, latestPrice.Price, latestPrice.OriginalPrice);
                                 }
                                 else
                                 {
-                                    // Add price record
-                                    var latestPrice = product.PriceHistory.FirstOrDefault();
-                                    if (latestPrice != null)
-                                    {
-                                        latestPrice.ProductId = existingProduct.Id;
-                                        await repository.AddPriceRecordAsync(latestPrice);
-
-                                        // Check for fake discount
-                                        var isFake = analyzer.IsFakeDiscount(existingProduct, latestPrice.Price, latestPrice.OriginalPrice);
-                                        if (isFake)
-                                        {
-                                            LogPotentialFakeDiscount(logger, product.Name, latestPrice.Price, latestPrice.OriginalPrice);
-                                        }
-                                    }
+                                    LogPriceUpdate(logger, product.Name, latestPrice.Price);
                                 }
                             }
                         }
-                        catch (Exception ex)
-                        {
-                            LogErrorScraping(logger, scraper.GetType().Name, ex);
-                        }
+                        logger.LogInformation("Finished processing product {Index}", i + 1);
                     }
 
+                    logger.LogInformation("[{Store}] Scraping task completely finished.", config.Name);
                 }
-
-                await Task.Delay(TimeSpan.FromHours(3), stoppingToken); //  10 sec for debugging
+                catch (Exception ex)
+                {
+                    LogErrorScraping(logger, config.Name, ex);
+                }
             }
         }
 
@@ -88,6 +154,9 @@ namespace FakeDiscountDetector.Worker
 
         [LoggerMessage(Level = LogLevel.Warning, Message = "POTENTIAL FAKE DISCOUNT DETECTED: {Name}. Price: {Price}, Claimed Original: {OriginalPrice}")]
         static partial void LogPotentialFakeDiscount(ILogger logger, string name, decimal price, decimal? originalPrice);
+
+        [LoggerMessage(Level = LogLevel.Information, Message = "Updated price for {Name}. New Price: {Price}")]
+        static partial void LogPriceUpdate(ILogger logger, string name, decimal price);
 
         [LoggerMessage(Level = LogLevel.Error, Message = "Error during scraping cycle for {ScraperName}.")]
         static partial void LogErrorScraping(ILogger logger, string scraperName, Exception ex);

@@ -140,3 +140,8 @@ __pycache__/
 *.log
 *.thumbs.db
 .DS_Store
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
