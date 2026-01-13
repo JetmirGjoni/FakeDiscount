@@ -81,8 +81,8 @@ csx/
 
 # BundleConfig
 *.bundle.js
-*.min.js
-*.min.css
+# *.min.js
+# *.min.css
 
 # Web Publish
 web.config
