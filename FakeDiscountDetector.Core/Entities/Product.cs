@@ -17,7 +17,7 @@ namespace FakeDiscountDetector.Core.Entities
 
         public string Category { get; set; } = string.Empty;
 
-        // Navigation property
+        // Navigation property,
         public List<PriceRecord> PriceHistory { get; set; } = new List<PriceRecord>();
     }
 }
